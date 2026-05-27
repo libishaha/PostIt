@@ -94,6 +94,7 @@ def signup(data: UserSignup, db: Session = Depends(get_db)):
 
     db.add(user)
     db.commit()
+    db.refresh(user)
     return {"message" : "Account Created Successfully"}
 
 @app.post("/login")
@@ -108,3 +109,17 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
         "token_type" : "bearer",
         "username" : user.username
     }
+
+@app.post("/create_post", response_model=PostResponse)
+def create_post(data: PostCreate, token, db: Session = Depends(get_db)):
+    user = get_current_user(token, db)
+    post = Post(title = data.title, content = data.content, owner_id = user.id)
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+    return post
+
+@app.get("/posts", response_model=list[PostResponse])
+def get_posts(token, db: Session = Depends(get_db)):
+    user = get_current_user(token, db)
+    return db.query(Post).filter(Post.owner_id == user.id).order_by(Post.created_at.desc()).all()
