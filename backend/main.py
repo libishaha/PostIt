@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from database import Base, engine, get_db
 from models import User, Post
 import os
@@ -66,7 +67,9 @@ def create_token(data: dict):
     to_encode.update({"exp" : expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def get_current_user(token: str, db: Session):
+security = HTTPBearer()
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
+    token = credentials.credentials
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=ALGORITHM)
         email: str = payload.get("sub")
@@ -110,16 +113,14 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
         "username" : user.username
     }
 
-@app.post("/create_post", response_model=PostResponse)
-def create_post(data: PostCreate, token, db: Session = Depends(get_db)):
-    user = get_current_user(token, db)
-    post = Post(title = data.title, content = data.content, owner_id = user.id)
+@app.post("/posts", response_model=PostResponse)
+def create_post(data: PostCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    post = Post(title = data.title, content = data.content, owner_id = current_user.id)
     db.add(post)
     db.commit()
     db.refresh(post)
     return post
 
 @app.get("/posts", response_model=list[PostResponse])
-def get_posts(token, db: Session = Depends(get_db)):
-    user = get_current_user(token, db)
-    return db.query(Post).filter(Post.owner_id == user.id).order_by(Post.created_at.desc()).all()
+def get_posts(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(Post).filter(Post.owner_id == current_user.id).order_by(Post.created_at.desc()).all()
