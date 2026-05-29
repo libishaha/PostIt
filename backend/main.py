@@ -71,7 +71,7 @@ security = HTTPBearer()
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
     token = credentials.credentials
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=ALGORITHM)
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
             raise HTTPException(status_code=401, detail="Invalid token")
@@ -124,3 +124,33 @@ def create_post(data: PostCreate, db: Session = Depends(get_db), current_user: U
 @app.get("/posts", response_model=list[PostResponse])
 def get_posts(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return db.query(Post).filter(Post.owner_id == current_user.id).order_by(Post.created_at.desc()).all()
+
+@app.get("/me")
+def get_me(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    total_posts = db.query(Post).filter(Post.owner_id == current_user.id).count()
+    return {
+        "username": current_user.username,
+        "email": current_user.email,
+        "created_at": current_user.created_at,
+        "total_posts": total_posts
+    }
+
+@app.put("/posts/{post_id}", response_model=PostResponse)
+def edit_post(post_id: int, data: PostCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    post = db.query(Post).filter(Post.id == post_id, Post.owner_id == current_user.id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    post.title = data.title
+    post.content = data.content
+    db.commit()
+    db.refresh(post)
+    return post
+
+@app.delete("/posts/{post_id}")
+def delete_post(post_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    post = db.query(Post).filter(Post.id == post_id, Post.owner_id == current_user.id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    db.delete(post)
+    db.commit()
+    return {"message": "Post deleted"}
